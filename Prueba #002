@@ -1,0 +1,218 @@
+class SnakeGame {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.controls = new Controls();
+        this.highScores = [];
+        this.isGameStarted = false;
+        this.isPaused = false;
+
+        this.setupCanvas();
+        this.loadHighScores();
+        this.initGame();
+
+        this.gameLoop = this.gameLoop.bind(this);
+        window.addEventListener('resize', this.setupCanvas.bind(this));
+
+        // Configurar el botón de inicio
+        document.getElementById('startGameBtn').addEventListener('click', () => {
+            if (!this.isGameStarted) {
+                this.startGame();
+            }
+        });
+
+        // Escuchar evento de pausa
+        document.addEventListener('togglePause', () => {
+            if (this.isGameStarted && !this.isGameOver) {
+                this.isPaused = !this.isPaused;
+                if (!this.isPaused) {
+                    this.gameLoop(); // Reanudar el juego
+                }
+            }
+        });
+        this.achievements = new Achievements(this);
+        this.achievements.loadAchievements();
+    }
+
+    setupCanvas() {
+        const size = Math.min(window.innerWidth - 40, 400);
+        this.canvas.width = size;
+        this.canvas.height = size;
+        this.gridSize = 20;
+        this.tileSize = size / this.gridSize;
+    }
+
+    loadHighScores() {
+        const savedScores = localStorage.getItem('snakeHighScores');
+        this.highScores = savedScores ? JSON.parse(savedScores) : [];
+        this.updateHighScoresTable();
+    }
+
+    saveHighScore(score) {
+        const playerName = document.getElementById('playerName').value.trim() || 'Anónimo';
+        this.highScores.push({ name: playerName, score: score });
+        this.highScores.sort((a, b) => b.score - a.score);
+        this.highScores = this.highScores.slice(0, 10); // Mantener solo los 10 mejores
+        localStorage.setItem('snakeHighScores', JSON.stringify(this.highScores));
+        this.updateHighScoresTable();
+    }
+
+    updateHighScoresTable() {
+        const tbody = document.getElementById('highScoresTable');
+        tbody.innerHTML = '';
+        this.highScores.forEach((score, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${score.name}</td>
+                <td>${score.score}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    initGame() {
+        this.snake = [{x: 10, y: 10}];
+        this.food = this.generateFood();
+        this.score = 0;
+        this.gameSpeed = 150;
+        this.isGameOver = false;
+        this.isPaused = false;
+        this.updateScore();
+        this.canvas.style.display = 'none'; // Hide canvas initially
+        document.getElementById('startGameBtn').style.display = 'block'; // Show start button
+        document.getElementById('playerName').disabled = false; // Habilitar el campo de nombre
+    }
+
+    startGame() {
+        const playerName = document.getElementById('playerName').value.trim();
+        if (!playerName) {
+            alert('Por favor, ingresa tu nombre antes de comenzar');
+            return;
+        }
+
+        this.isGameStarted = true;
+        this.canvas.style.display = 'block';
+        document.getElementById('startGameBtn').style.display = 'none';
+        document.getElementById('playerName').disabled = true; // Deshabilitar el campo de nombre
+        this.gameLoop();
+    }
+
+    generateFood() {
+        let food;
+        do {
+            food = {
+                x: Math.floor(Math.random() * this.gridSize),
+                y: Math.floor(Math.random() * this.gridSize)
+            };
+        } while (this.snake.some(segment => segment.x === food.x && segment.y === food.y));
+        return food;
+    }
+
+    updateScore() {
+        document.getElementById('score').textContent = this.score;
+    }
+
+    drawSnake() {
+        this.ctx.fillStyle = '#00ff00';
+        this.snake.forEach((segment, index) => {
+            this.ctx.fillRect(
+                segment.x * this.tileSize,
+                segment.y * this.tileSize,
+                this.tileSize - 1,
+                this.tileSize - 1
+            );
+        });
+    }
+
+    drawFood() {
+        this.ctx.fillStyle = '#ff0000';
+        this.ctx.fillRect(
+            this.food.x * this.tileSize,
+            this.food.y * this.tileSize,
+            this.tileSize - 1,
+            this.tileSize - 1
+        );
+    }
+
+    moveSnake() {
+        const direction = this.controls.getDirection();
+        const head = {...this.snake[0]};
+
+        switch(direction) {
+            case 'up': head.y--; break;
+            case 'down': head.y++; break;
+            case 'left': head.x--; break;
+            case 'right': head.x++; break;
+        }
+
+        // Check collision with walls
+        if (head.x < 0 || head.x >= this.gridSize || head.y < 0 || head.y >= this.gridSize) {
+            this.gameOver();
+            return;
+        }
+
+        // Check collision with self
+        if (this.snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+            this.gameOver();
+            return;
+        }
+
+        this.snake.unshift(head);
+
+        // Check if food is eaten
+        if (head.x === this.food.x && head.y === this.food.y) {
+            this.score += 10;
+            this.updateScore();
+            this.food = this.generateFood();
+            this.gameSpeed = Math.max(50, this.gameSpeed - 2);
+        } else {
+            this.snake.pop();
+        }
+    }
+
+    gameOver() {
+        this.isGameOver = true;
+        this.saveHighScore(this.score);
+        const playerName = document.getElementById('playerName').value.trim() || 'Anónimo';
+        document.getElementById('finalPlayerName').textContent = playerName;
+        document.getElementById('finalScore').textContent = this.score;
+        const gameOverModal = new bootstrap.Modal(document.getElementById('gameOver'));
+        gameOverModal.show();
+        document.getElementById('playerName').disabled = false; // Volver a habilitar el campo de nombre
+    }
+
+    clearCanvas() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    drawPauseText() {
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '20px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('PAUSADO', this.canvas.width / 2, this.canvas.height / 2);
+    }
+
+    gameLoop() {
+        if (!this.isGameOver && !this.isPaused) {
+            this.clearCanvas();
+            this.moveSnake();
+            this.drawFood();
+            this.drawSnake();
+            this.achievements.checkAchievements(); // Verificar logros en cada frame
+            setTimeout(this.gameLoop, this.gameSpeed);
+        } else if (this.isPaused) {
+            this.drawPauseText();
+        }
+    }
+}
+
+function restartGame() {
+    const gameOverModal = bootstrap.Modal.getInstance(document.getElementById('gameOver'));
+    if (gameOverModal) {
+        gameOverModal.hide();
+    }
+    game = new SnakeGame();
+}
+
+let game = new SnakeGame();
